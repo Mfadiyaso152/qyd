@@ -1,11 +1,68 @@
-<div align="center">
+# قَيد - نظام تسجيل العمليات المالية اليومية
 
-<img width="1200" height="475" alt="GHBanner" src="https://github.com/user-attachments/assets/0aa67016-6eaf-458a-adb2-6e31a0763ed6" />
+**كل عملية، في يومها**
 
-  <h1>Built with AI Studio</h2>
+تطبيق ويب متجاوز وعالي الأداء مصمم خصيصًا لتسجيل ومتابعة العمليات المالية اليومية بدقة تامة: المشتريات، التحويلات، والعُهد المالية.
 
-  <p>The fastest path from prompt to production with Gemini.</p>
+---
 
-  <a href="https://aistudio.google.com/apps">Start building</a>
+## 🛠 التقنيات المستخدمة
 
-</div>
+- **React & TypeScript & Vite**: لبناء واجهات مستخدم سريعة وقوية.
+- **Tailwind CSS**: لتنسيق الواجهات وفق الهوية البصرية بدقة.
+- **Firebase Authentication**: لتسجيل الدخول الحقيقي عبر حساب Google فقط.
+- **Cloud Firestore**: لحفظ وإدارة البيانات المالية في بنية آمنة ومخصصة لكل مستخدم.
+- **Firebase Storage**: لإرفاق ومعاينة الإيصالات والصور.
+- **React Router**: للتنقل السلس بين الأقسام.
+- **jsPDF & jsPDF-AutoTable**: لتصدير التقارير بصيغة PDF باللغة العربية.
+
+---
+
+## 🎨 الهوية البصرية والألوان
+
+- **كحلي أساسي**: `#142B36`
+- **خلفية عاجية**: `#F7F4EB`
+- **نعناعي**: `#B9E6CF`
+- **أخضر بترولي للأزرار**: `#367C73`
+- **كهرماني للعُهد والتنبيهات**: `#D99A32`
+
+---
+
+## 🚀 دليل إعداد Firebase خطوة بخطوة
+
+1. **إنشاء مشروع في Firebase Console**:
+   - انتقل إلى [Firebase Console](https://console.firebase.google.com).
+   - انقر على **Add project** وقم بإنشاء مشروع جديد.
+
+2. **تفعيل Google Authentication**:
+   - من لوحة تحكم المشروع، اذهب إلى **Authentication** ثم **Sign-in method**.
+   - فعّل **Google** كمزود مصادقة وأدخل بريد الدعم.
+
+3. **إنشاء قاعدة بيانات Cloud Firestore**:
+   - اذهب إلى **Firestore Database** وانقر على **Create database**.
+   - اختر وضع الإنتاج (Production mode) وحدد المنطقة الجغرافية الأقرب.
+
+4. **تفعيل Firebase Storage**:
+   - اذهب إلى **Storage** وانقر على **Get started** لإنشاء مساحة التخزين الخاصة بالإيصالات.
+
+5. **إضافة Web App ونسخ الإعدادات**:
+   - اذهب إلى إعدادات المشروع (Project Settings) وأنشيء تطبيق ويب جديد (Web App).
+   - انسخ إعدادات الكونفجريشن وضعها في ملف `.env` أو `firebase-applet-config.json`.
+
+6. **نشر القواعد والفهارس**:
+   - استخدم Firebase CLI لنشر `firestore.rules`, `storage.rules`, و `firestore.indexes.json`.
+
+---
+
+## 📦 تشغيل المشروع محلياً
+
+```bash
+# تثبيت الحزم
+npm install
+
+# تشغيل خادم التطوير
+npm run dev
+
+# بناء المشروع للإنتاج
+npm run build
+```

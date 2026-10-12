@@ -1,0 +1,84 @@
+{
+  "entities": {
+    "User": {
+      "title": "مستخدم قيد",
+      "description": "بيانات وتفضيلات المستخدم",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string" },
+        "email": { "type": "string" },
+        "displayName": { "type": "string" },
+        "photoURL": { "type": "string" },
+        "createdAt": { "type": "number" }
+      },
+      "required": ["uid", "email"]
+    },
+    "Transaction": {
+      "title": "عملية مالية",
+      "description": "مشتريات أو تحويلات أو عُهد",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "type": { "type": "string", "enum": ["purchase", "transfer", "custody"] },
+        "amountHalalas": { "type": "number" },
+        "description": { "type": "string", "maxLength": 300 },
+        "category": { "type": "string" },
+        "paymentSource": { "type": "string" },
+        "transactionDate": { "type": "string", "pattern": "^\\d{4}-\\d{2}-\\d{2}$" },
+        "transactionTime": { "type": "string" },
+        "occurredAt": { "type": "number" },
+        "createdAt": { "type": "number" },
+        "updatedAt": { "type": "number" }
+      },
+      "required": ["userId", "type", "amountHalalas", "description", "transactionDate", "occurredAt"]
+    },
+    "Custody": {
+      "title": "عهد مالية",
+      "description": "عهدة أو مشروع مالي",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "name": { "type": "string" },
+        "sourceEntity": { "type": "string" },
+        "initialAmountHalalas": { "type": "number" },
+        "remainingAmountHalalas": { "type": "number" },
+        "status": { "type": "string", "enum": ["open", "closed"] },
+        "createdAt": { "type": "number" }
+      },
+      "required": ["userId", "name", "initialAmountHalalas", "remainingAmountHalalas", "status"]
+    },
+    "CustodyMovement": {
+      "title": "حركة عهدة",
+      "description": "حركات الشراء أو التسوية المرتبطة بالعهدة",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "custodyId": { "type": "string" },
+        "type": { "type": "string", "enum": ["receive", "purchase", "refund"] },
+        "amountHalalas": { "type": "number" },
+        "description": { "type": "string" },
+        "date": { "type": "string" },
+        "createdAt": { "type": "number" }
+      },
+      "required": ["userId", "custodyId", "type", "amountHalalas", "date"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": { "$ref": "User" },
+      "description": "ملف المستخدم"
+    },
+    "/users/{userId}/transactions/{transactionId}": {
+      "schema": { "$ref": "Transaction" },
+      "description": "معاملات المستخدم المالية"
+    },
+    "/users/{userId}/custodies/{custodyId}": {
+      "schema": { "$ref": "Custody" },
+      "description": "عُهد المستخدم"
+    },
+    "/users/{userId}/custodyMovements/{movementId}": {
+      "schema": { "$ref": "CustodyMovement" },
+      "description": "حركات العُهد"
+    }
+  }
+}

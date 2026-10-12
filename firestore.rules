@@ -1,0 +1,38 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // Default catch-all deny
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    // Users collection
+    match /users/{userId} {
+      allow read, write: if isOwner(userId);
+
+      // Transactions sub-collection
+      match /transactions/{transactionId} {
+        allow read, write: if isOwner(userId);
+      }
+
+      // Custodies sub-collection
+      match /custodies/{custodyId} {
+        allow read, write: if isOwner(userId);
+      }
+
+      // Custody movements sub-collection
+      match /custodyMovements/{movementId} {
+        allow read, write: if isOwner(userId);
+      }
+    }
+  }
+}
