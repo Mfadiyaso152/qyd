@@ -15,22 +15,48 @@ service cloud.firestore {
       return isSignedIn() && request.auth.uid == userId;
     }
 
-    // Users collection
+    // Users collection and profiles
     match /users/{userId} {
-      allow read, write: if isOwner(userId);
+      allow read: if isOwner(userId);
+      allow write: if isOwner(userId);
 
       // Transactions sub-collection
       match /transactions/{transactionId} {
-        allow read, write: if isOwner(userId);
+        allow read: if isOwner(userId);
+        allow create, update: if isOwner(userId) 
+          && request.resource.data.amountHalalas is number 
+          && request.resource.data.amountHalalas >= 0
+          && request.resource.data.type in ['purchase', 'transfer', 'custody'];
+        allow delete: if isOwner(userId);
       }
 
       // Custodies sub-collection
       match /custodies/{custodyId} {
-        allow read, write: if isOwner(userId);
+        allow read: if isOwner(userId);
+        allow create, update: if isOwner(userId)
+          && request.resource.data.initialAmountHalalas is number
+          && request.resource.data.remainingAmountHalalas is number
+          && request.resource.data.remainingAmountHalalas >= 0;
+        allow delete: if isOwner(userId);
       }
 
       // Custody movements sub-collection
       match /custodyMovements/{movementId} {
+        allow read: if isOwner(userId);
+        allow create, update: if isOwner(userId)
+          && request.resource.data.amountHalalas is number
+          && request.resource.data.amountHalalas >= 0
+          && request.resource.data.type in ['receive', 'purchase', 'refund'];
+        allow delete: if isOwner(userId);
+      }
+
+      // Bank Account sub-collection
+      match /bankAccount/{docId} {
+        allow read, write: if isOwner(userId);
+      }
+
+      // Bank transactions sub-collection
+      match /bankTransactions/{txnId} {
         allow read, write: if isOwner(userId);
       }
     }

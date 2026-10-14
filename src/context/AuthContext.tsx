@@ -1,5 +1,5 @@
 /**
- * Auth Context for Qayd (Strictly Firebase Auth + Google Provider)
+ * Auth Context for Qayd (Firebase Auth + Google Provider)
  */
 import React, { createContext, useContext, useEffect, useState } from 'react';
 import { 
@@ -22,6 +22,12 @@ interface AuthContextType {
   updateUserSettings: (settings: Partial<UserSettings>) => Promise<void>;
 }
 
+const defaultSettings: UserSettings = {
+  numberFormat: 'english',
+  timezone: 'Asia/Riyadh',
+  weekStart: 'saturday',
+};
+
 const AuthContext = createContext<AuthContextType>({
   currentUser: null,
   userProfile: null,
@@ -34,10 +40,6 @@ const AuthContext = createContext<AuthContextType>({
 
 export const useAuth = () => useContext(AuthContext);
 
-const defaultSettings: UserSettings = {
-  numberFormat: 'arabic',
-};
-
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
@@ -49,44 +51,78 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       return;
     }
 
-    const unsubscribe = onAuthStateChanged(auth, async (user) => {
-      // Security check: ensure user is authenticated and has email
-      if (user && user.email) {
+    // Try loading cached profile for instant zero-delay rendering
+    try {
+      const cached = localStorage.getItem('qayd_cached_profile');
+      if (cached) {
+        setUserProfile(JSON.parse(cached));
+      }
+    } catch (e) {
+      // Ignore storage errors
+    }
+
+    const unsubscribe = onAuthStateChanged(auth, (user) => {
+      if (user) {
         setCurrentUser(user);
-        try {
-          const userDocRef = doc(db, 'users', user.uid);
-          const userSnap = await getDoc(userDocRef);
-          
+        
+        // Optimistic instant profile so the app loads immediately without any waiting screen
+        const baseProfile: UserProfile = {
+          uid: user.uid,
+          email: user.email || '',
+          displayName: user.displayName || 'مستخدم قَيد',
+          photoURL: user.photoURL || '',
+          createdAt: Date.now(),
+          settings: defaultSettings,
+        };
+
+        setUserProfile(prev => {
+          const next = prev ? { ...prev, uid: user.uid, email: user.email || prev.email, displayName: user.displayName || prev.displayName, photoURL: user.photoURL || prev.photoURL } : baseProfile;
+          try {
+            localStorage.setItem('qayd_cached_profile', JSON.stringify(next));
+          } catch (e) {}
+          return next;
+        });
+
+        // Unblock immediately!
+        setLoading(false);
+
+        // Fetch / sync firestore profile asynchronously in the background
+        const userDocRef = doc(db, 'users', user.uid);
+        getDoc(userDocRef).then((userSnap) => {
           if (userSnap.exists()) {
-            setUserProfile(userSnap.data() as UserProfile);
-          } else {
-            const newProfile: UserProfile = {
+            const data = userSnap.data();
+            const syncedProfile: UserProfile = {
               uid: user.uid,
               email: user.email || '',
-              displayName: user.displayName || 'مستخدم قيد',
+              displayName: user.displayName || 'مستخدم قَيد',
               photoURL: user.photoURL || '',
-              createdAt: Date.now(),
-              settings: defaultSettings,
+              createdAt: data.createdAt || Date.now(),
+              settings: {
+                ...defaultSettings,
+                ...(data.settings || {}),
+              },
             };
-            await setDoc(userDocRef, newProfile);
-            setUserProfile(newProfile);
+            setUserProfile(syncedProfile);
+            try {
+              localStorage.setItem('qayd_cached_profile', JSON.stringify(syncedProfile));
+            } catch (e) {}
+          } else {
+            // First time user: save doc in background
+            setDoc(userDocRef, baseProfile).catch((err) => {
+              console.warn('Silent user profile creation error:', err);
+            });
           }
-        } catch (err) {
-          console.error('Error fetching user profile:', err);
-          setUserProfile({
-            uid: user.uid,
-            email: user.email || '',
-            displayName: user.displayName || 'مستخدم قيد',
-            photoURL: user.photoURL || '',
-            createdAt: Date.now(),
-            settings: defaultSettings,
-          });
-        }
+        }).catch((err) => {
+          console.warn('Silent user profile sync error:', err);
+        });
       } else {
         setCurrentUser(null);
         setUserProfile(null);
+        try {
+          localStorage.removeItem('qayd_cached_profile');
+        } catch (e) {}
+        setLoading(false);
       }
-      setLoading(false);
     });
 
     return () => unsubscribe();
@@ -94,13 +130,18 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const signInWithGoogle = async () => {
     try {
-      const result = await signInWithPopup(auth, googleProvider);
-      if (!result.user) {
-        throw new Error('فشل المصادقة مع Google');
-      }
+      googleProvider.setCustomParameters({ prompt: 'select_account' });
+      await signInWithPopup(auth, googleProvider);
     } catch (error: any) {
-      console.error('Google Sign-In Error:', error);
-      throw new Error(error.message || 'فشل تسجيل الدخول باستخدام Google');
+      if (error.code === 'auth/popup-blocked') {
+        throw new Error('تم حظر النافذة المنبثقة من قبل المتصفح. يرجى السماح بالنوافذ المنبثقة لمتابعة تسجيل الدخول.');
+      } else if (error.code === 'auth/popup-closed-by-user') {
+        throw new Error('تم إغلاق نافذة تسجيل الدخول قبل اكتمال العملية.');
+      } else if (error.code === 'auth/cancelled-popup-request') {
+        // Ignored
+        return;
+      }
+      throw new Error(error.message || 'فشل تسجيل الدخول باستخدام Google.');
     }
   };
 
@@ -110,7 +151,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       setCurrentUser(null);
       setUserProfile(null);
     } catch (error: any) {
-      console.error('Logout Error:', error);
+      console.error('Logout error:', error);
       throw new Error('فشل تسجيل الخروج');
     }
   };

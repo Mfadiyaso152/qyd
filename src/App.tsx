@@ -2,33 +2,69 @@
  * @license
  * SPDX-License-Identifier: Apache-2.0
  */
-import React from 'react';
+import React, { useState } from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider, useAuth } from './context/AuthContext';
-import { HeaderNav } from './components/HeaderNav';
+import { NotificationProvider } from './context/NotificationContext';
+import { Sidebar } from './components/Sidebar';
 import { BottomNav } from './components/BottomNav';
+import { MoreDrawer } from './components/MoreDrawer';
+import { Logo } from './components/Logo';
 import { Login } from './pages/Login';
 import { DailyLedger } from './pages/DailyLedger';
 import { TransactionDetail } from './pages/TransactionDetail';
 import { DaysRecord } from './pages/DaysRecord';
 import { Custodies } from './pages/Custodies';
 import { Reports } from './pages/Reports';
-import { Settings } from './pages/Settings';
-import { motion, AnimatePresence } from 'motion/react';
+import { BankAccountPage } from './pages/BankAccount';
+import { Menu } from 'lucide-react';
+import { motion } from 'motion/react';
 
 const AuthenticatedLayout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  const [isMoreDrawerOpen, setIsMoreDrawerOpen] = useState(false);
+
   return (
-    <div className="min-h-screen bg-[#F7F4EB] flex flex-col">
-      <main className="flex-1 p-4 lg:p-8 overflow-y-auto max-w-7xl mx-auto w-full">
-        <motion.div
-          initial={{ opacity: 0, y: 12 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.3 }}
-        >
-          {children}
-        </motion.div>
-      </main>
+    <div className="min-h-screen bg-[#F7F9FC] flex flex-row-reverse">
+      {/* Fixed Right Sidebar on Desktop (>= 1024px) */}
+      <div className="hidden lg:block fixed top-0 right-0 bottom-0 w-64 z-30">
+        <Sidebar />
+      </div>
+
+      {/* Main Content Area */}
+      <div className="flex-1 flex flex-col min-h-screen w-full lg:mr-64 transition-all">
+        {/* Mobile Top Bar (Only visible < 1024px) */}
+        <header className="lg:hidden sticky top-0 bg-white/95 backdrop-blur-md border-b border-slate-100 z-30 px-4 py-3 flex items-center justify-between shadow-xs">
+          {/* Right side in RTL: Brand Logo */}
+          <Logo size="sm" showSubtitle={false} />
+
+          {/* Left side in RTL (فوق يسار): "المزيد" Button - Icon only, white background matching top bar */}
+          <button
+            onClick={() => setIsMoreDrawerOpen(true)}
+            className="p-2 rounded-xl bg-white hover:bg-slate-50 border border-slate-200/80 text-slate-700 transition-colors shadow-xs active:scale-95"
+            title="المزيد من الخيارات"
+            aria-label="المزيد"
+          >
+            <Menu className="w-5 h-5 text-slate-700" />
+          </button>
+        </header>
+
+        {/* Content Container */}
+        <main className="flex-1 p-4 md:p-6 lg:p-8 pb-24 lg:pb-8 max-w-7xl w-full mx-auto">
+          <motion.div
+            initial={{ opacity: 0, y: 8 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.2 }}
+          >
+            {children}
+          </motion.div>
+        </main>
+      </div>
+
+      {/* Mobile/Tablet Bottom Navigation */}
       <BottomNav />
+
+      {/* Slide-up "المزيد" Drawer */}
+      <MoreDrawer isOpen={isMoreDrawerOpen} onClose={() => setIsMoreDrawerOpen(false)} />
     </div>
   );
 };
@@ -38,19 +74,21 @@ const AppRoutes: React.FC = () => {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-[#F7F4EB] flex flex-col items-center justify-center gap-4">
+      <div className="min-h-screen bg-[#F7F9FC] flex flex-col items-center justify-center gap-4 p-4 select-none">
         <motion.div 
-          animate={{ scale: [1, 1.1, 1] }}
-          transition={{ repeat: Infinity, duration: 0.8, ease: 'easeInOut' }}
-          className="w-16 h-16 rounded-3xl bg-[#367C73] flex items-center justify-center text-white shadow-2xl"
+          animate={{ scale: [1, 1.05, 1] }}
+          transition={{ repeat: Infinity, duration: 1.2, ease: 'easeInOut' }}
+          className="flex flex-col items-center gap-3"
         >
-          <svg className="w-9 h-9 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
-            <path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1-2.5-2.5Z" />
-            <path d="M6 6h8M6 10h8" />
-            <path d="m9 14 2 2 4-4" stroke="#B9E6CF" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" />
-          </svg>
+          <Logo size="lg" showSubtitle={true} />
         </motion.div>
-        <p className="text-sm font-semibold text-[#142B36]">جاري التحميل...</p>
+        <div className="w-48 h-1 bg-slate-200 rounded-full overflow-hidden mt-2">
+          <motion.div 
+            className="h-full bg-[#315BEB] rounded-full"
+            animate={{ x: ['-100%', '100%'] }}
+            transition={{ repeat: Infinity, duration: 1.2, ease: 'easeInOut' }}
+          />
+        </div>
       </div>
     );
   }
@@ -65,9 +103,10 @@ const AppRoutes: React.FC = () => {
         <Route path="/" element={<DailyLedger />} />
         <Route path="/transaction/:id" element={<TransactionDetail />} />
         <Route path="/days" element={<DaysRecord />} />
+        <Route path="/bank" element={<BankAccountPage />} />
         <Route path="/custodies" element={<Custodies />} />
         <Route path="/reports" element={<Reports />} />
-        <Route path="/settings" element={<Settings />} />
+        <Route path="/settings" element={<Navigate to="/" replace />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </AuthenticatedLayout>
@@ -78,7 +117,9 @@ export default function App() {
   return (
     <BrowserRouter>
       <AuthProvider>
-        <AppRoutes />
+        <NotificationProvider>
+          <AppRoutes />
+        </NotificationProvider>
       </AuthProvider>
     </BrowserRouter>
   );

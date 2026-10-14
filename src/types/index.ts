@@ -2,7 +2,33 @@ export type TransactionType = 'purchase' | 'transfer' | 'custody';
 
 export type PurchaseCategory = 'food' | 'transport' | 'supplies' | 'bills' | 'other';
 
-export type PaymentSource = 'personal' | 'custody';
+export type PaymentSource = 'bank' | 'custody' | 'cash' | 'personal';
+
+export interface BankAccount {
+  userId: string;
+  accountName: string;
+  initialBalanceHalalas: number;
+  currentBalanceHalalas: number;
+  updatedAt: number;
+}
+
+export type BankTransactionType = 'deposit' | 'withdrawal' | 'adjustment';
+
+export interface BankTransaction {
+  id: string;
+  userId: string;
+  type: BankTransactionType;
+  amountHalalas: number;
+  source: string; // من وين جا المبلغ (دفعة مشروع، إيداع نقدي، تحويل عميل، دفعة مستحقات، إلخ)
+  description: string;
+  transactionDate: string; // YYYY-MM-DD
+  transactionTime: string; // HH:mm
+  occurredAt: number;
+  balanceAfterHalalas: number;
+  relatedTransactionId?: string;
+  notes?: string;
+  createdAt: number;
+}
 
 export interface Transaction {
   id: string;
@@ -15,6 +41,8 @@ export interface Transaction {
   custodyId?: string;
   senderName?: string;
   recipientName?: string;
+  personName?: string; // اسم الشخص المسؤول أو المستلم
+  phoneNumber?: string; // رقم الجوال للتواصل
   transactionDate: string; // YYYY-MM-DD
   transactionTime: string; // HH:mm
   timezone: string;
@@ -31,6 +59,8 @@ export interface Custody {
   userId: string;
   name: string;
   sourceEntity: string;
+  personName?: string; // اسم الشخص المستلم أو المسؤول عن العهدة
+  phoneNumber?: string; // رقم جوال الشخص
   initialAmountHalalas: number;
   remainingAmountHalalas: number;
   status: 'open' | 'closed';
@@ -54,6 +84,8 @@ export interface CustodyMovement {
 
 export interface UserSettings {
   numberFormat: 'arabic' | 'english';
+  timezone: string;
+  weekStart: 'saturday' | 'sunday' | 'monday';
 }
 
 export interface UserProfile {

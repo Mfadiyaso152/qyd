@@ -1,8 +1,15 @@
-/**
- * Add / Edit Transaction Modal Component
- */
-import React, { useState, useEffect } from 'react';
-import { X, ShoppingCart, ArrowLeftRight, ShieldCheck, Upload, AlertCircle, Check } from 'lucide-react';
+import React, { useState, useEffect, useRef } from 'react';
+import { 
+  X, 
+  ShoppingCart, 
+  ArrowLeftRight, 
+  Wallet, 
+  Upload, 
+  AlertCircle, 
+  Check, 
+  FileText, 
+  Trash2 
+} from 'lucide-react';
 import { Transaction, TransactionType, PurchaseCategory, PaymentSource, Custody } from '../types';
 import { toHalalas, fromHalalas, parseAmountInput } from '../utils/currencyUtils';
 import { getTodayDateString, getCurrentTimeString } from '../utils/dateUtils';
@@ -30,14 +37,16 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({
   const [amountInput, setAmountInput] = useState('');
   const [description, setDescription] = useState('');
   const [category, setCategory] = useState<PurchaseCategory>('supplies');
-  const [paymentSource, setPaymentSource] = useState<PaymentSource>('personal');
+  const [paymentSource, setPaymentSource] = useState<PaymentSource>('bank');
   const [custodyId, setCustodyId] = useState('');
   const [senderName, setSenderName] = useState('');
   const [recipientName, setRecipientName] = useState('');
   
-  // Custody creation specific fields (when type === 'custody' in modal)
+  // Custody specific
   const [custodyName, setCustodyName] = useState('');
   const [sourceEntity, setSourceEntity] = useState('');
+  const [personName, setPersonName] = useState('');
+  const [phoneNumber, setPhoneNumber] = useState('');
 
   const [transactionDate, setTransactionDate] = useState(getTodayDateString(timezone));
   const [transactionTime, setTransactionTime] = useState(getCurrentTimeString(timezone));
@@ -47,7 +56,10 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({
 
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
-  const [hasChanges, setHasChanges] = useState(false);
+  const [isDirty, setIsDirty] = useState(false);
+
+  // Idempotency token to prevent duplicate saves on accidental multi-clicks
+  const submissionTokenRef = useRef<string | null>(null);
 
   useEffect(() => {
     if (editTransaction) {
@@ -59,6 +71,8 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({
       setCustodyId(editTransaction.custodyId || '');
       setSenderName(editTransaction.senderName || '');
       setRecipientName(editTransaction.recipientName || '');
+      setPersonName(editTransaction.personName || '');
+      setPhoneNumber(editTransaction.phoneNumber || '');
       setTransactionDate(editTransaction.transactionDate);
       setTransactionTime(editTransaction.transactionTime);
       setNotes(editTransaction.notes || '');
@@ -78,6 +92,8 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({
       setRecipientName('');
       setCustodyName('');
       setSourceEntity('');
+      setPersonName('');
+      setPhoneNumber('');
       setTransactionDate(getTodayDateString(timezone));
       setTransactionTime(getCurrentTimeString(timezone));
       setNotes('');
@@ -85,7 +101,8 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({
       setReceiptFile(null);
     }
     setError('');
-    setHasChanges(false);
+    setIsDirty(false);
+    submissionTokenRef.current = null;
   }, [editTransaction, isOpen, timezone, openCustodies]);
 
   if (!isOpen) return null;
@@ -98,17 +115,28 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({
         return;
       }
       setReceiptFile(file);
-      setHasChanges(true);
+      setIsDirty(true);
+    }
+  };
+
+  const handleCloseAttempt = () => {
+    if (isDirty) {
+      if (window.confirm('لديك تعديلات غير محفوظة، هل أنت متأكد من الإلغاء؟')) {
+        onClose();
+      }
+    } else {
+      onClose();
     }
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (loading) return; // Prevent double submission
     setError('');
 
     const amount = parseAmountInput(amountInput);
     if (amount <= 0) {
-      setError('المبلغ يجب أن يكون أكبر من صفر');
+      setError('يرجى إدخال مبلغ صحيح أكبر من صفر');
       return;
     }
 
@@ -118,14 +146,18 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({
     }
 
     if (type === 'custody' && (!custodyName.trim() || !sourceEntity.trim())) {
-      setError('اسم العهدة والجهة المسلمة مطلوبان');
+      setError('اسم العهدة والجهة المسلِّمة مطلوبان');
       return;
     }
 
-    if (paymentSource === 'custody' && !custodyId) {
-      setError('يرجى اختيار العهدة المفتوحة خصماً منها');
+    if (type === 'purchase' && paymentSource === 'custody' && !custodyId) {
+      setError('يرجى اختيار العهدة المفتوحة للدفع منها');
       return;
     }
+
+    // Generate unique token for this submission
+    submissionTokenRef.current = `${Date.now()}_${Math.random()}`;
+    const token = submissionTokenRef.current;
 
     setLoading(true);
 
@@ -133,29 +165,41 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({
       let finalReceiptUrl = receiptUrl;
       let finalReceiptStoragePath = editTransaction?.receiptStoragePath || '';
 
+      // Upload receipt if provided
       if (receiptFile) {
-        if (isConfigured) {
-          const fileId = `${Date.now()}_${receiptFile.name}`;
-          const storagePath = `receipts/${fileId}`;
-          const storageRef = ref(storage, storagePath);
-          await uploadBytes(storageRef, receiptFile);
-          finalReceiptUrl = await getDownloadURL(storageRef);
-          finalReceiptStoragePath = storagePath;
-        } else {
+        try {
+          if (isConfigured && storage) {
+            const fileId = `${Date.now()}_${receiptFile.name.replace(/\s+/g, '_')}`;
+            const storagePath = `receipts/${fileId}`;
+            const storageRef = ref(storage, storagePath);
+            await uploadBytes(storageRef, receiptFile);
+            finalReceiptUrl = await getDownloadURL(storageRef);
+            finalReceiptStoragePath = storagePath;
+          } else {
+            // Local fallback
+            finalReceiptUrl = URL.createObjectURL(receiptFile);
+            finalReceiptStoragePath = 'local';
+          }
+        } catch (uploadErr) {
+          console.warn('Storage upload note:', uploadErr);
+          // If storage bucket is not enabled or restricted, gracefully proceed
           finalReceiptUrl = URL.createObjectURL(receiptFile);
-          finalReceiptStoragePath = 'local-preview';
+          finalReceiptStoragePath = 'local';
         }
       }
 
+      // Check for concurrent token match
+      if (submissionTokenRef.current !== token) return;
+
       const amountHalalas = toHalalas(amount);
-      const finalDesc = type === 'custody' ? custodyName : description;
-      const finalSender = type === 'custody' ? sourceEntity : senderName;
+      const finalDesc = type === 'custody' ? custodyName.trim() : description.trim();
+      const finalSender = type === 'custody' ? sourceEntity.trim() : senderName.trim();
 
       // Check custody balance if paying from custody
       if (type === 'purchase' && paymentSource === 'custody' && custodyId) {
         const selectedCustody = openCustodies.find(c => c.id === custodyId);
         if (selectedCustody && amountHalalas > selectedCustody.remainingAmountHalalas) {
-          setError(`المبلغ المطلوب (${amount} ر.س) يتجاوز المتبقي في العهدة (${fromHalalas(selectedCustody.remainingAmountHalalas)} ر.س)`);
+          setError(`المبلغ المطلوب (${amount} ر.س) يتجاوز الرصيد المتبقي في العهدة (${fromHalalas(selectedCustody.remainingAmountHalalas)} ر.س)`);
           setLoading(false);
           return;
         }
@@ -169,12 +213,14 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({
         paymentSource: type === 'purchase' ? paymentSource : undefined,
         custodyId: type === 'purchase' && paymentSource === 'custody' ? custodyId : undefined,
         senderName: type === 'transfer' || type === 'custody' ? finalSender : undefined,
-        recipientName: type === 'transfer' ? recipientName : undefined,
+        recipientName: type === 'transfer' ? recipientName.trim() : undefined,
+        personName: type === 'custody' ? (personName.trim() || undefined) : undefined,
+        phoneNumber: type === 'custody' ? (phoneNumber.trim() || undefined) : undefined,
         transactionDate,
         transactionTime,
         timezone,
-        occurredAt: new Date(`${transactionDate}T${transactionTime}:00`).getTime(),
-        notes,
+        occurredAt: new Date(`${transactionDate}T${transactionTime}:00`).getTime() || Date.now(),
+        notes: notes.trim(),
         receiptUrl: finalReceiptUrl,
         receiptStoragePath: finalReceiptStoragePath,
       }, editTransaction?.id);
@@ -182,58 +228,48 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({
       onClose();
     } catch (err: any) {
       console.error('Save transaction error:', err);
-      setError(err.message || 'فشل حفظ العملية');
+      setError(err.message || 'حدث خطأ أثناء حفظ العملية');
     } finally {
       setLoading(false);
     }
   };
 
-  const handleCloseAttempt = () => {
-    if (hasChanges) {
-      if (window.confirm('لديك تعديلات غير محفوظة. هل تريد الخروج حقاً؟')) {
-        onClose();
-      }
-    } else {
-      onClose();
-    }
-  };
-
   return (
-    <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto animate-fadeIn">
-      <div className="bg-white w-full max-w-xl rounded-2xl shadow-2xl overflow-hidden flex flex-col my-8 border border-slate-200">
-        {/* Header */}
-        <div className="px-6 py-4 bg-[#142B36] text-white flex items-center justify-between">
-          <h3 className="font-bold text-lg flex items-center gap-2">
-            {editTransaction ? 'تعديل العملية المالية' : 'إضافة عملية جديدة'}
+    <div className="fixed inset-0 z-50 bg-black/40 backdrop-blur-xs flex items-center justify-center p-4 overflow-y-auto animate-fadeIn">
+      <div className="bg-white w-full max-w-lg rounded-3xl shadow-2xl overflow-hidden flex flex-col my-auto border border-slate-100 max-h-[92vh]">
+        {/* Header matching Image 3 */}
+        <div className="px-6 py-5 border-b border-slate-100 flex items-center justify-between">
+          <h3 className="font-bold text-lg text-[#17233D]">
+            {editTransaction ? 'تعديل العملية' : 'إضافة عملية'}
           </h3>
           <button 
             onClick={handleCloseAttempt}
-            className="p-2 bg-white/10 hover:bg-rose-500/80 rounded-lg transition-colors text-white"
+            className="p-1.5 text-slate-400 hover:text-slate-600 rounded-full hover:bg-slate-100 transition-colors"
           >
             <X className="w-5 h-5" />
           </button>
         </div>
 
-        {/* Form Body */}
-        <form onSubmit={handleSubmit} className="p-6 space-y-5 overflow-y-auto max-h-[80vh]">
+        {/* Modal Form */}
+        <form onSubmit={handleSubmit} className="p-6 space-y-5 overflow-y-auto">
           {error && (
-            <div className="p-3 bg-rose-50 border border-rose-200 text-rose-700 rounded-xl text-sm flex items-center gap-2">
-              <AlertCircle className="w-5 h-5 shrink-0" />
+            <div className="p-3 bg-rose-50 border border-rose-200 text-rose-700 rounded-2xl text-xs flex items-center gap-2 text-right">
+              <AlertCircle className="w-4 h-4 shrink-0 text-rose-600" />
               <span>{error}</span>
             </div>
           )}
 
-          {/* Transaction Type Selector */}
+          {/* Segmented Type Selector matching Image 3 */}
           <div>
-            <label className="block text-sm font-semibold text-slate-700 mb-2">نوع العملية</label>
-            <div className="grid grid-cols-3 gap-2">
+            <label className="block text-xs font-bold text-slate-500 mb-2">نوع العملية</label>
+            <div className="grid grid-cols-3 gap-2 bg-[#F7F9FC] p-1 rounded-2xl border border-slate-100">
               <button
                 type="button"
-                onClick={() => { setType('purchase'); setHasChanges(true); }}
-                className={`flex items-center justify-center gap-2 py-3 px-4 rounded-xl border font-medium text-sm transition-all ${
+                onClick={() => { setType('purchase'); setIsDirty(true); }}
+                className={`flex items-center justify-center gap-2 py-2.5 px-3 rounded-xl font-bold text-xs transition-all ${
                   type === 'purchase'
-                    ? 'bg-[#367C73] text-white border-[#367C73] shadow-md'
-                    : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50'
+                    ? 'bg-white text-[#315BEB] shadow-xs'
+                    : 'text-slate-600 hover:text-[#17233D]'
                 }`}
               >
                 <ShoppingCart className="w-4 h-4" />
@@ -242,11 +278,11 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({
 
               <button
                 type="button"
-                onClick={() => { setType('transfer'); setHasChanges(true); }}
-                className={`flex items-center justify-center gap-2 py-3 px-4 rounded-xl border font-medium text-sm transition-all ${
+                onClick={() => { setType('transfer'); setIsDirty(true); }}
+                className={`flex items-center justify-center gap-2 py-2.5 px-3 rounded-xl font-bold text-xs transition-all ${
                   type === 'transfer'
-                    ? 'bg-[#367C73] text-white border-[#367C73] shadow-md'
-                    : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50'
+                    ? 'bg-white text-[#315BEB] shadow-xs'
+                    : 'text-slate-600 hover:text-[#17233D]'
                 }`}
               >
                 <ArrowLeftRight className="w-4 h-4" />
@@ -255,245 +291,271 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({
 
               <button
                 type="button"
-                onClick={() => { setType('custody'); setHasChanges(true); }}
-                className={`flex items-center justify-center gap-2 py-3 px-4 rounded-xl border font-medium text-sm transition-all ${
+                onClick={() => { setType('custody'); setIsDirty(true); }}
+                className={`flex items-center justify-center gap-2 py-2.5 px-3 rounded-xl font-bold text-xs transition-all ${
                   type === 'custody'
-                    ? 'bg-[#D99A32] text-white border-[#D99A32] shadow-md'
-                    : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50'
+                    ? 'bg-white text-[#F4AE52] shadow-xs'
+                    : 'text-slate-600 hover:text-[#17233D]'
                 }`}
               >
-                <ShieldCheck className="w-4 h-4" />
-                <span>عهدة جديدة</span>
+                <Wallet className="w-4 h-4" />
+                <span>عهدة</span>
               </button>
             </div>
           </div>
 
-          {/* Amount and Description */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div>
-              <label className="block text-sm font-semibold text-slate-700 mb-1.5">المبلغ (ريال سعودي) *</label>
-              <div className="relative">
-                <input
-                  type="text"
-                  inputMode="decimal"
-                  placeholder="0.00"
-                  value={amountInput}
-                  onChange={(e) => { setAmountInput(e.target.value); setHasChanges(true); }}
-                  required
-                  className="w-full pl-12 pr-4 py-2.5 rounded-xl border border-slate-300 focus:ring-2 focus:ring-[#367C73] focus:border-transparent text-left font-mono font-bold text-lg"
-                />
-                <span className="absolute left-4 top-3 text-slate-400 font-semibold text-sm">ر.س</span>
-              </div>
+          {/* Amount Field */}
+          <div>
+            <label className="block text-xs font-bold text-slate-500 mb-1.5">المبلغ (ريال) *</label>
+            <div className="relative">
+              <input
+                type="text"
+                inputMode="decimal"
+                placeholder="0.00"
+                value={amountInput}
+                onChange={(e) => { setAmountInput(e.target.value); setIsDirty(true); }}
+                required
+                className="w-full px-4 py-3 rounded-2xl border border-slate-200 text-left font-mono font-bold text-xl text-[#17233D] focus:outline-none focus:border-[#315BEB] focus:ring-1 focus:ring-[#315BEB]"
+              />
+              <span className="absolute left-4 top-3.5 text-xs font-bold text-slate-400">ر.س</span>
             </div>
-
-            {type === 'custody' ? (
-              <div>
-                <label className="block text-sm font-semibold text-slate-700 mb-1.5">اسم العهدة أو المشروع *</label>
-                <input
-                  type="text"
-                  placeholder="مثال: عهدة مشروع المؤتمر"
-                  value={custodyName}
-                  onChange={(e) => { setCustodyName(e.target.value); setHasChanges(true); }}
-                  required
-                  className="w-full px-4 py-2.5 rounded-xl border border-slate-300 focus:ring-2 focus:ring-[#367C73] focus:border-transparent"
-                />
-              </div>
-            ) : (
-              <div>
-                <label className="block text-sm font-semibold text-slate-700 mb-1.5">وصف العملية *</label>
-                <input
-                  type="text"
-                  placeholder="مثال: مستلزمات مكتبية"
-                  value={description}
-                  onChange={(e) => { setDescription(e.target.value); setHasChanges(true); }}
-                  required
-                  className="w-full px-4 py-2.5 rounded-xl border border-slate-300 focus:ring-2 focus:ring-[#367C73] focus:border-transparent"
-                />
-              </div>
-            )}
           </div>
 
-          {/* Purchase Specific Fields */}
-          {type === 'purchase' && (
-            <div className="space-y-4 p-4 rounded-xl bg-slate-50 border border-slate-200">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          {/* Custody Specific: Name, Person, Phone, Source */}
+          {type === 'custody' ? (
+            <div className="space-y-3.5 p-4 rounded-2xl bg-[#FEF6E9] border border-amber-200/60">
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1.5">اسم العهدة أو المشروع *</label>
+                <input
+                  type="text"
+                  placeholder="مثال: عهدة المشتريات اليومية"
+                  value={custodyName}
+                  onChange={(e) => { setCustodyName(e.target.value); setIsDirty(true); }}
+                  required
+                  className="w-full px-4 py-2.5 rounded-2xl border border-amber-200 bg-white text-sm text-[#17233D] focus:outline-none focus:border-[#315BEB]"
+                />
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-xs font-bold text-slate-600 mb-1">التصنيف</label>
-                  <select
-                    value={category}
-                    onChange={(e) => { setCategory(e.target.value as PurchaseCategory); setHasChanges(true); }}
-                    className="w-full px-3 py-2 rounded-lg border border-slate-300 bg-white text-sm"
-                  >
-                    <option value="supplies">مستلزمات</option>
-                    <option value="food">طعام</option>
-                    <option value="transport">مواصلات</option>
-                    <option value="bills">فواتير</option>
-                    <option value="other">أخرى</option>
-                  </select>
+                  <label className="block text-xs font-bold text-slate-700 mb-1.5">اسم الشخص المسؤول / المستلم *</label>
+                  <input
+                    type="text"
+                    placeholder="مثال: أحمد العتيبي"
+                    value={personName}
+                    onChange={(e) => { setPersonName(e.target.value); setIsDirty(true); }}
+                    required
+                    className="w-full px-4 py-2.5 rounded-2xl border border-amber-200 bg-white text-sm text-[#17233D] focus:outline-none focus:border-[#315BEB]"
+                  />
                 </div>
 
                 <div>
-                  <label className="block text-xs font-bold text-slate-600 mb-1">مصدر الدفع</label>
-                  <select
-                    value={paymentSource}
-                    onChange={(e) => { setPaymentSource(e.target.value as PaymentSource); setHasChanges(true); }}
-                    className="w-full px-3 py-2 rounded-lg border border-slate-300 bg-white text-sm"
-                  >
-                    <option value="personal">شخصي</option>
-                    <option value="custody">من عهدة</option>
-                  </select>
+                  <label className="block text-xs font-bold text-slate-700 mb-1.5">رقم جوال الشخص *</label>
+                  <input
+                    type="tel"
+                    dir="ltr"
+                    placeholder="05XXXXXXXX"
+                    value={phoneNumber}
+                    onChange={(e) => { setPhoneNumber(e.target.value); setIsDirty(true); }}
+                    required
+                    className="w-full px-4 py-2.5 rounded-2xl border border-amber-200 bg-white text-sm text-right font-mono text-[#17233D] focus:outline-none focus:border-[#315BEB]"
+                  />
                 </div>
               </div>
 
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1.5">الجهة المُسلِّمة (اختياري)</label>
+                <input
+                  type="text"
+                  placeholder="مثال: الإدارة المالية أو الشركة"
+                  value={sourceEntity}
+                  onChange={(e) => { setSourceEntity(e.target.value); setIsDirty(true); }}
+                  className="w-full px-4 py-2.5 rounded-2xl border border-amber-200 bg-white text-sm text-[#17233D] focus:outline-none focus:border-[#315BEB]"
+                />
+              </div>
+            </div>
+          ) : (
+            <div>
+              <label className="block text-xs font-bold text-slate-500 mb-1.5">الوصف *</label>
+              <input
+                type="text"
+                placeholder="مثال: مستلزمات مكتبية"
+                value={description}
+                onChange={(e) => { setDescription(e.target.value); setIsDirty(true); }}
+                required
+                className="w-full px-4 py-2.5 rounded-2xl border border-slate-200 text-sm text-[#17233D] focus:outline-none focus:border-[#315BEB]"
+              />
+            </div>
+          )}
+
+          {/* Purchase Specific: Category and Source */}
+          {type === 'purchase' && (
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 p-3.5 rounded-2xl bg-[#F7F9FC] border border-slate-100">
+              <div>
+                <label className="block text-xs font-bold text-slate-500 mb-1">التصنيف</label>
+                <select
+                  value={category}
+                  onChange={(e) => { setCategory(e.target.value as PurchaseCategory); setIsDirty(true); }}
+                  className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-white text-xs font-medium text-[#17233D]"
+                >
+                  <option value="supplies">مستلزمات</option>
+                  <option value="food">طعام</option>
+                  <option value="transport">مواصلات</option>
+                  <option value="bills">فواتير</option>
+                  <option value="other">أخرى</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-500 mb-1">مصدر الدفع</label>
+                <select
+                  value={paymentSource}
+                  onChange={(e) => { setPaymentSource(e.target.value as PaymentSource); setIsDirty(true); }}
+                  className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-white text-xs font-medium text-[#17233D]"
+                >
+                  <option value="bank">حساب البنك الرئيسي (خصم تلقائي)</option>
+                  <option value="custody">من عهدة</option>
+                  <option value="cash">نقدًا / كاش</option>
+                  <option value="personal">شخصي</option>
+                </select>
+              </div>
+
+              {paymentSource === 'bank' && (
+                <div className="sm:col-span-2 p-2.5 rounded-xl bg-blue-50/80 border border-blue-100 flex items-center gap-2 text-xs text-[#315BEB]">
+                  <span className="w-2 h-2 rounded-full bg-[#315BEB] shrink-0" />
+                  <span>سيتم خصم المبلغ تلقائيًا من رصيد حساب البنك الرئيسي وتوثيق تفاصيل العملية.</span>
+                </div>
+              )}
+
               {paymentSource === 'custody' && (
-                <div>
-                  <label className="block text-xs font-bold text-slate-600 mb-1">اختر العهدة المفتوحة *</label>
+                <div className="sm:col-span-2 pt-1">
+                  <label className="block text-xs font-bold text-slate-600 mb-1">اختر العهدة للدفع منها *</label>
                   <select
                     value={custodyId}
-                    onChange={(e) => { setCustodyId(e.target.value); setHasChanges(true); }}
-                    className="w-full px-3 py-2 rounded-lg border border-slate-300 bg-white text-sm"
+                    onChange={(e) => { setCustodyId(e.target.value); setIsDirty(true); }}
+                    className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-white text-xs font-medium text-[#17233D]"
                     required
                   >
-                    <option value="">-- اختر العهدة --</option>
+                    <option value="">-- اختر العهدة المفتوحة --</option>
                     {openCustodies.map((c) => (
                       <option key={c.id} value={c.id}>
                         {c.name} (المتبقي: {fromHalalas(c.remainingAmountHalalas)} ر.س)
                       </option>
                     ))}
                   </select>
+                  {openCustodies.length === 0 && (
+                    <p className="text-[11px] text-amber-700 mt-1">
+                      لا توجد عُهد مفتوحة حالياً، يرجى إنشاء عهدة أولاً أو اختيار الدفع الشخصي.
+                    </p>
+                  )}
                 </div>
               )}
             </div>
           )}
 
-          {/* Transfer Specific Fields */}
+          {/* Transfer Specific */}
           {type === 'transfer' && (
-            <div className="space-y-4 p-4 rounded-xl bg-slate-50 border border-slate-200">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-xs font-bold text-slate-600 mb-1">اسم المرسل</label>
-                  <input
-                    type="text"
-                    placeholder="مثال: أحمد محمد"
-                    value={senderName}
-                    onChange={(e) => { setSenderName(e.target.value); setHasChanges(true); }}
-                    className="w-full px-3 py-2 rounded-lg border border-slate-300 bg-white text-sm"
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs font-bold text-slate-600 mb-1">اسم المستلم</label>
-                  <input
-                    type="text"
-                    placeholder="مثال: شركة توريدات"
-                    value={recipientName}
-                    onChange={(e) => { setRecipientName(e.target.value); setHasChanges(true); }}
-                    className="w-full px-3 py-2 rounded-lg border border-slate-300 bg-white text-sm"
-                  />
-                </div>
-              </div>
-              <p className="text-xs text-amber-700 bg-amber-50 p-2 rounded-lg border border-amber-200">
-                ملاحظة: التحويل يُسجّل في قسم التحويلات ولا يُحسب تلقائيًا كمشتريات.
-              </p>
-            </div>
-          )}
-
-          {/* Custody Creation Specific Fields */}
-          {type === 'custody' && (
-            <div className="space-y-4 p-4 rounded-xl bg-amber-50/50 border border-amber-200">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 p-3.5 rounded-2xl bg-[#F7F9FC] border border-slate-100">
               <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1">اسم الجهة أو الشخص الذي سلّم المبلغ *</label>
+                <label className="block text-xs font-bold text-slate-500 mb-1">الطرف المرسل</label>
                 <input
                   type="text"
-                  placeholder="مثال: الإدارة المالية"
-                  value={sourceEntity}
-                  onChange={(e) => { setSourceEntity(e.target.value); setHasChanges(true); }}
-                  required
-                  className="w-full px-3 py-2 rounded-lg border border-slate-300 bg-white text-sm"
+                  placeholder="مثال: أحمد محمد"
+                  value={senderName}
+                  onChange={(e) => { setSenderName(e.target.value); setIsDirty(true); }}
+                  className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-white text-xs text-[#17233D]"
                 />
               </div>
-              <p className="text-xs text-amber-800">
-                استلام العهدة يُنشئ رصيداً مستقلاً للمتابعة ولا يُعد شراءً.
-              </p>
+              <div>
+                <label className="block text-xs font-bold text-slate-500 mb-1">الطرف المستلم</label>
+                <input
+                  type="text"
+                  placeholder="مثال: المشروع أ"
+                  value={recipientName}
+                  onChange={(e) => { setRecipientName(e.target.value); setIsDirty(true); }}
+                  className="w-full px-3 py-2 rounded-xl border border-slate-200 bg-white text-xs text-[#17233D]"
+                />
+              </div>
             </div>
           )}
 
-          {/* Date and Time */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          {/* Date & Time Fields */}
+          <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="block text-sm font-semibold text-slate-700 mb-1.5">التاريخ</label>
+              <label className="block text-xs font-bold text-slate-500 mb-1.5">التاريخ</label>
               <input
                 type="date"
                 value={transactionDate}
-                onChange={(e) => { setTransactionDate(e.target.value); setHasChanges(true); }}
-                className="w-full px-4 py-2.5 rounded-xl border border-slate-300 focus:ring-2 focus:ring-[#367C73] focus:border-transparent text-sm"
+                onChange={(e) => { setTransactionDate(e.target.value); setIsDirty(true); }}
+                className="w-full px-3 py-2 rounded-2xl border border-slate-200 text-xs text-[#17233D] font-mono focus:outline-none focus:border-[#315BEB]"
               />
             </div>
             <div>
-              <label className="block text-sm font-semibold text-slate-700 mb-1.5">الوقت</label>
+              <label className="block text-xs font-bold text-slate-500 mb-1.5">الوقت</label>
               <input
                 type="time"
                 value={transactionTime}
-                onChange={(e) => { setTransactionTime(e.target.value); setHasChanges(true); }}
-                className="w-full px-4 py-2.5 rounded-xl border border-slate-300 focus:ring-2 focus:ring-[#367C73] focus:border-transparent text-sm font-mono"
+                onChange={(e) => { setTransactionTime(e.target.value); setIsDirty(true); }}
+                className="w-full px-3 py-2 rounded-2xl border border-slate-200 text-xs text-[#17233D] font-mono focus:outline-none focus:border-[#315BEB]"
               />
             </div>
           </div>
 
-          {/* Notes */}
+          {/* Notes (Optional) */}
           <div>
-            <label className="block text-sm font-semibold text-slate-700 mb-1.5">ملاحظات إضافية (اختياري)</label>
+            <label className="block text-xs font-bold text-slate-500 mb-1.5">ملاحظات إضافية (اختياري)</label>
             <textarea
               rows={2}
-              placeholder="ملاحظات تفصيلية..."
+              placeholder="أي تفاصيل أو ملاحظات إضافية..."
               value={notes}
-              onChange={(e) => { setNotes(e.target.value); setHasChanges(true); }}
-              className="w-full px-4 py-2.5 rounded-xl border border-slate-300 focus:ring-2 focus:ring-[#367C73] focus:border-transparent text-sm"
+              onChange={(e) => { setNotes(e.target.value); setIsDirty(true); }}
+              className="w-full px-4 py-2 rounded-2xl border border-slate-200 text-xs text-[#17233D] focus:outline-none focus:border-[#315BEB]"
             />
           </div>
 
-          {/* Receipt Attachment */}
+          {/* Receipt Upload matching Image 3 */}
           <div>
-            <label className="block text-sm font-semibold text-slate-700 mb-1.5">إرفاق إيصال (صورة أو PDF بحد أقصى 5 ميجابايت)</label>
-            <div className="flex items-center gap-3">
-              <label className="flex-1 flex items-center justify-center gap-2 px-4 py-3 rounded-xl border-2 border-dashed border-slate-300 hover:border-[#367C73] bg-slate-50 hover:bg-slate-100 cursor-pointer transition-all text-sm text-slate-600 font-medium">
-                <Upload className="w-5 h-5 text-[#367C73]" />
-                <span>{receiptFile ? receiptFile.name : 'اختر ملف الإيصال...'}</span>
-                <input type="file" accept="image/*,application/pdf" onChange={handleFileChange} className="hidden" />
+            <label className="block text-xs font-bold text-slate-500 mb-1.5">إرفاق إيصال</label>
+            <div className="flex items-center gap-2">
+              <label className="flex-1 flex items-center justify-center gap-2 px-4 py-3 rounded-2xl border-2 border-dashed border-slate-200 hover:border-[#315BEB] bg-[#F7F9FC] hover:bg-slate-50 cursor-pointer transition-all text-xs font-semibold text-slate-600">
+                <Upload className="w-4 h-4 text-[#315BEB]" />
+                <span className="truncate">{receiptFile ? receiptFile.name : 'إرفاق إيصال (صورة أو PDF)'}</span>
+                <input 
+                  type="file" 
+                  accept="image/jpeg,image/png,image/webp,application/pdf" 
+                  onChange={handleFileChange} 
+                  className="hidden" 
+                />
               </label>
-              {receiptUrl && !receiptFile && (
-                <a 
-                  href={receiptUrl} 
-                  target="_blank" 
-                  rel="noopener noreferrer"
-                  className="px-3 py-3 rounded-xl bg-slate-100 text-slate-700 text-sm font-semibold hover:bg-slate-200 transition-colors"
+
+              {(receiptFile || receiptUrl) && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setReceiptFile(null);
+                    setReceiptUrl('');
+                    setIsDirty(true);
+                  }}
+                  className="p-3 text-rose-500 hover:text-rose-700 bg-rose-50 rounded-2xl hover:bg-rose-100 transition-colors"
+                  title="إزالة الإيصال"
                 >
-                  عرض الحالي
-                </a>
+                  <Trash2 className="w-4 h-4" />
+                </button>
               )}
             </div>
           </div>
 
-          {/* Submit Action */}
-          <div className="pt-3 border-t border-slate-200 flex items-center justify-end gap-3">
-            <button
-              type="button"
-              onClick={handleCloseAttempt}
-              className="px-5 py-2.5 rounded-xl border border-slate-300 text-slate-700 font-medium hover:bg-slate-100 transition-colors text-sm"
-            >
-              إلغاء
-            </button>
+          {/* Submit Action: Full Width Cobalt Blue Button matching Image 3 */}
+          <div className="pt-2">
             <button
               type="submit"
               disabled={loading}
-              className="px-6 py-2.5 rounded-xl bg-[#367C73] text-white font-semibold hover:bg-[#2b635b] transition-colors shadow-md flex items-center gap-2 text-sm disabled:opacity-50"
+              className="w-full py-3.5 px-6 rounded-2xl bg-[#315BEB] hover:bg-[#2548cb] text-white font-semibold text-sm shadow-sm transition-all flex items-center justify-center gap-2 min-h-[48px] disabled:opacity-50"
             >
               {loading ? (
-                <span>جاري الحفظ...</span>
+                <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />
               ) : (
-                <>
-                  <Check className="w-4 h-4" />
-                  <span>حفظ العملية</span>
-                </>
+                <span>حفظ العملية</span>
               )}
             </button>
           </div>

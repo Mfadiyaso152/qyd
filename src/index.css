@@ -3,25 +3,43 @@
 @layer base {
   body {
     font-family: 'IBM Plex Sans Arabic', sans-serif;
-    background-color: #F7F4EB;
-    color: #142B36;
+    background-color: #F7F9FC;
+    color: #17233D;
+    -webkit-tap-highlight-color: transparent;
   }
 }
 
-/* Custom scrollbars and transitions */
+/* Micro-transitions between 150ms and 250ms respecting prefers-reduced-motion */
+@media (prefers-reduced-motion: no-preference) {
+  a, button, input, select, textarea, .card-hover {
+    transition-duration: 200ms;
+    transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, ::before, ::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* Custom scrollbars */
 ::-webkit-scrollbar {
   width: 6px;
   height: 6px;
 }
 ::-webkit-scrollbar-track {
-  background: #F7F4EB;
+  background: #F7F9FC;
 }
 ::-webkit-scrollbar-thumb {
-  background: #cbd5e1;
-  border-radius: 3px;
+  background: #D5DCE8;
+  border-radius: 9999px;
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: #94a3b8;
+  background: #9AA7BC;
 }
 
 /* Print Styles */
@@ -29,7 +47,8 @@
   aside, 
   nav, 
   .no-print, 
-  button {
+  button,
+  .print-hidden {
     display: none !important;
   }
   body {
@@ -38,7 +57,11 @@
   }
   main {
     padding: 0 !important;
+    margin: 0 !important;
     max-width: 100% !important;
   }
+  .card-print {
+    box-shadow: none !important;
+    border: 1px solid #e2e8f0 !important;
+  }
 }
-
